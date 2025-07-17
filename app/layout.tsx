@@ -1,10 +1,11 @@
-import type { Metadata } from 'next'
-import './globals.css'
+import type React from "react"
+import type { Metadata } from "next"
+import "./globals.css"
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+  title: "MAFO - 지도 내비게이션 앱",
+  description: "카카오맵 기반 내비게이션 서비스",
+  generator: "v0.dev",
 }
 
 export default function RootLayout({
@@ -13,8 +14,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="ko">
+      <body suppressHydrationWarning={true}>{children}</body>
     </html>
   )
 }
