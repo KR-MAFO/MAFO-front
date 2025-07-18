@@ -84,6 +84,19 @@ interface RouteStep {
   coordinates?: { lat: number; lng: number }
 }
 
+// 💡 반드시 본인 REST API 키로 교체!
+const KAKAO_REST_API_KEY = process.env.KAKAO_MOBILITY_API_KEY
+
+async function fetchKakaoPlaceDetails(keyword: string, lat: number, lng: number) {
+  const url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(keyword)}&y=${lat}&x=${lng}&radius=500`
+  const res = await fetch(url, {
+    headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` },
+  })
+  const data = await res.json()
+  if (!data.documents || data.documents.length === 0) return null
+  return data.documents[0]
+}
+
 export default function HomeTab() {
   const { t } = useLanguage()
   const [searchQuery, setSearchQuery] = useState("")
@@ -96,7 +109,7 @@ export default function HomeTab() {
   const [isNavigating, setIsNavigating] = useState(false)
   const [selectedPlace, setSelectedPlace] = useState<NearbyPlace | null>(null)
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
-  const [routeType, setRouteType] = useState<"walking" | "transit" | "driving">("driving") // 기본값을 driving으로 변경
+  const [routeType, setRouteType] = useState<"walking" | "transit" | "driving">("driving")
   const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([
     {
       id: "1",
@@ -148,6 +161,222 @@ export default function HomeTab() {
   const [showApiWarning, setShowApiWarning] = useState(false)
   const [apiWarningMessage, setApiWarningMessage] = useState("")
   const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    if (!mapRef.current || typeof window === "undefined" || !window.kakao) return;
+
+    const map = mapRef.current;
+
+    const SEARCH_TARGETS = [
+      // 기존 category group code
+      { name: "음식점", type: "category", value: "FD6" },
+      { name: "카페", type: "category", value: "CE7" },
+      { name: "마트", type: "category", value: "MT1" },
+      { name: "편의점", type: "category", value: "CS2" },
+      { name: "병원", type: "category", value: "HP8" },
+      { name: "약국", type: "category", value: "PM9" },
+      { name: "은행", type: "category", value: "BK9" },
+      { name: "주유소", type: "category", value: "OL7" },
+      { name: "주차장", type: "category", value: "PK6" },
+      { name: "숙박", type: "category", value: "AD5" },
+      { name: "학원", type: "category", value: "AC5" },
+      { name: "지하철역", type: "category", value: "SW8" },
+      { name: "공공기관", type: "category", value: "PO3" },
+      // 생활/문화/여가 등
+      { name: "공원", type: "keyword", value: "공원" },
+      { name: "어린이집", type: "keyword", value: "어린이집" },
+      { name: "유치원", type: "keyword", value: "유치원" },
+      { name: "초등학교", type: "keyword", value: "초등학교" },
+      { name: "중학교", type: "keyword", value: "중학교" },
+      { name: "고등학교", type: "keyword", value: "고등학교" },
+      { name: "대학교", type: "keyword", value: "대학교" },
+      { name: "도서관", type: "keyword", value: "도서관" },
+      { name: "박물관", type: "keyword", value: "박물관" },
+      { name: "미술관", type: "keyword", value: "미술관" },
+      { name: "공연장", type: "keyword", value: "공연장" },
+      { name: "문화센터", type: "keyword", value: "문화센터" },
+      { name: "수영장", type: "keyword", value: "수영장" },
+      { name: "헬스장", type: "keyword", value: "헬스장" },
+      { name: "체육관", type: "keyword", value: "체육관" },
+      { name: "골프연습장", type: "keyword", value: "골프연습장" },
+      { name: "테니스장", type: "keyword", value: "테니스장" },
+      { name: "야구장", type: "keyword", value: "야구장" },
+      { name: "축구장", type: "keyword", value: "축구장" },
+      { name: "배드민턴장", type: "keyword", value: "배드민턴장" },
+      { name: "볼링장", type: "keyword", value: "볼링장" },
+      { name: "클라이밍", type: "keyword", value: "클라이밍" },
+      { name: "탁구장", type: "keyword", value: "탁구장" },
+      { name: "당구장", type: "keyword", value: "당구장" },
+      { name: "노래방", type: "keyword", value: "노래방" },
+      { name: "PC방", type: "keyword", value: "PC방" },
+      { name: "만화방", type: "keyword", value: "만화방" },
+      { name: "코인노래방", type: "keyword", value: "코인노래방" },
+      { name: "코인세탁", type: "keyword", value: "코인세탁" },
+      // 종교·행정 등
+      { name: "교회", type: "keyword", value: "교회" },
+      { name: "성당", type: "keyword", value: "성당" },
+      { name: "사찰", type: "keyword", value: "사찰" },
+      { name: "절", type: "keyword", value: "절" },
+      { name: "성전", type: "keyword", value: "성전" },
+      { name: "공습소", type: "keyword", value: "공습소" },
+      { name: "주민센터", type: "keyword", value: "주민센터" },
+      { name: "우체국", type: "keyword", value: "우체국" },
+      { name: "동사무소", type: "keyword", value: "동사무소" },
+      { name: "구청", type: "keyword", value: "구청" },
+      { name: "시청", type: "keyword", value: "시청" },
+      { name: "경찰서", type: "keyword", value: "경찰서" },
+      { name: "파출소", type: "keyword", value: "파출소" },
+      { name: "소방서", type: "keyword", value: "소방서" },
+      { name: "보건소", type: "keyword", value: "보건소" },
+      { name: "복지관", type: "keyword", value: "복지관" },
+      { name: "노인정", type: "keyword", value: "노인정" },
+      { name: "청소년수련관", type: "keyword", value: "청소년수련관" },
+      // 서비스업
+      { name: "미용실", type: "keyword", value: "미용실" },
+      { name: "이발소", type: "keyword", value: "이발소" },
+      { name: "네일샵", type: "keyword", value: "네일" },
+      { name: "피부관리", type: "keyword", value: "피부관리" },
+      { name: "마사지", type: "keyword", value: "마사지" },
+      { name: "찜질방", type: "keyword", value: "찜질방" },
+      { name: "사우나", type: "keyword", value: "사우나" },
+      { name: "세탁소", type: "keyword", value: "세탁소" },
+      { name: "공방", type: "keyword", value: "공방" },
+      { name: "사진관", type: "keyword", value: "사진관" },
+      { name: "장례식장", type: "keyword", value: "장례식장" },
+      { name: "결혼식장", type: "keyword", value: "결혼식장" },
+      // 상업·소매·기타
+      { name: "가구단지", type: "keyword", value: "가구단지" },
+      { name: "가구", type: "keyword", value: "가구" },
+      { name: "인테리어", type: "keyword", value: "인테리어" },
+      { name: "부동산", type: "keyword", value: "부동산" },
+      { name: "공장", type: "keyword", value: "공장" },
+      { name: "도매시장", type: "keyword", value: "도매시장" },
+      { name: "재래시장", type: "keyword", value: "재래시장" },
+      { name: "청과시장", type: "keyword", value: "청과시장" },
+      { name: "축산물시장", type: "keyword", value: "축산물시장" },
+      { name: "수산시장", type: "keyword", value: "수산시장" },
+      // 자동차·운수·기타 특수시설
+      { name: "아파트", type: "keyword", value: "아파트" },
+      { name: "검사소", type: "keyword", value: "검사소" },
+      { name: "자동차", type: "keyword", value: "자동차" },
+      { name: "자동차정비", type: "keyword", value: "자동차정비" },
+      { name: "주차타워", type: "keyword", value: "주차타워" },
+      { name: "터미널", type: "keyword", value: "터미널" },
+      { name: "고속터미널", type: "keyword", value: "고속터미널" },
+      { name: "버스터미널", type: "keyword", value: "버스터미널" },
+      // 동물/반려동물
+      { name: "동물병원", type: "keyword", value: "동물병원" },
+      { name: "펫샵", type: "keyword", value: "펫샵" },
+      { name: "반려동물", type: "keyword", value: "반려동물" },
+      // 전문직/행정·사무
+      { name: "세무사", type: "keyword", value: "세무사" },
+      { name: "회계사", type: "keyword", value: "회계사" },
+      { name: "법무사", type: "keyword", value: "법무사" },
+      { name: "공인중개사", type: "keyword", value: "공인중개사" },
+      { name: "노무사", type: "keyword", value: "노무사" },
+      { name: "변호사", type: "keyword", value: "변호사" },
+      { name: "건축사", type: "keyword", value: "건축사" },
+      // 기타 추가 필요시 계속...
+    ];
+
+    const findClosestPOI = async (lat: number, lng: number) => {
+      const results = await Promise.all(
+        SEARCH_TARGETS.map(async ({ name, type, value }) => {
+          let url = "";
+          if (type === "category") {
+            url = `https://dapi.kakao.com/v2/local/search/category.json?category_group_code=${value}&x=${lng}&y=${lat}&radius=50&sort=distance`;
+          } else {
+            url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(value)}&y=${lat}&x=${lng}&radius=50&sort=distance`;
+          }
+          const res = await fetch(url, {
+            headers: { Authorization: `KakaoAK be818e812c08b93832cfd093d8f206e7` },
+          });
+          const data = await res.json();
+          return data.documents && data.documents[0]
+            ? { ...data.documents[0], categoryKor: name }
+            : null;
+        })
+      );
+      const filtered = results.filter(Boolean);
+      filtered.sort((a, b) => Number(a!.distance) - Number(b!.distance));
+      return filtered[0] || null;
+    };
+
+    const handleClick = async (mouseEvent: any) => {
+      const latlng = mouseEvent.latLng;
+      clearMarkers();
+      clearInfoWindow();
+
+      let marker = new window.kakao.maps.Marker({
+        map,
+        position: latlng,
+      });
+      markersRef.current = [marker];
+
+      // [A] 주변에서 가장 가까운 POI 검색
+      const poi = await findClosestPOI(latlng.getLat(), latlng.getLng());
+
+      // [B] InfoWindow HTML 생성 (길찾기 버튼 포함)
+      let contentHtml;
+      if (poi) {
+        contentHtml = `
+          <div style="padding:12px;font-size:14px;width:240px;">
+            <div style="font-weight:bold;margin-bottom:6px;">${poi.place_name}</div>
+            <div style="color:#999;font-size:12px;margin-bottom:2px;">${poi.categoryKor} (${poi.category_name})</div>
+            <div style="font-size:12px;color:#666;">${poi.road_address_name || poi.address_name}</div>
+            ${poi.phone ? `<div style="font-size:12px;color:#2c7;">☎️ ${poi.phone}</div>` : ""}
+            <div style="margin:8px 0;">
+              <a href="${poi.place_url}" target="_blank" style="color:#3182f6;text-decoration:underline;font-size:13px;">카카오맵 상세보기</a>
+            </div>
+            <button id="navigate-btn" style="margin-top:8px;padding:8px 14px;background:#3b82f6;color:white;border:none;border-radius:4px;cursor:pointer;font-size:13px;">
+              🧭 여기로 길찾기
+            </button>
+          </div>
+        `;
+      } else {
+        contentHtml = `<div style="padding:12px;">해당 위치 주변에<br>정보 없음</div>`;
+      }
+
+      const infoWindow = new window.kakao.maps.InfoWindow({ content: contentHtml });
+      infoWindow.open(map, marker);
+      infoWindowRef.current = infoWindow;
+
+      // [C] InfoWindow 버튼 클릭 이벤트 핸들러 등록
+      setTimeout(() => {
+        const navBtn = document.getElementById("navigate-btn");
+        if (navBtn && poi) {
+          navBtn.onclick = () => {
+            // poi를 NearbyPlace 타입으로 변환해서 전달
+            const lat = Number(poi.y ?? poi.lat);
+            const lng = Number(poi.x ?? poi.lng);
+            if (!lat || !lng) {
+              alert("장소 좌표 정보가 없습니다.");
+              return;
+            }
+            const place = {
+              id: poi.id || "",
+              name: poi.place_name || poi.name || "",
+              category: poi.categoryKor || poi.category_name || "",
+              distance: poi.distance ? `${poi.distance}m` : "",
+              rating: 0,
+              address: poi.road_address_name || poi.address_name || "",
+              lat,
+              lng,
+            };
+            startNavigation(place); // 기존 내비게이션 함수에 전달
+          };
+        }
+      }, 0);
+    };
+
+    // 클릭 이벤트 등록
+    // @ts-ignore
+    window.kakao.maps.event.addListener(map, "click", handleClick);
+    return () => {
+      // @ts-ignore
+      window.kakao.maps.event.removeListener(map, "click", handleClick);
+    };
+  }, [mounted, mapRef.current]);
 
   useEffect(() => {
     setMounted(true)
@@ -1122,36 +1351,48 @@ export default function HomeTab() {
   }
 
   // 장소 클릭 시 지도에 표시
-  const handlePlaceClick = (place: NearbyPlace) => {
+  // 장소 클릭 시: 카카오 API로 상세 정보도 함께 가져오기
+  const handlePlaceClick = async (place: NearbyPlace) => {
     if (!mapRef.current || typeof window === "undefined") return
 
-    const placePosition = new window.kakao.maps.LatLng(place.lat, place.lng)
+    // 1. 카카오 장소 상세정보 가져오기
+    const placeDetail = await fetchKakaoPlaceDetails(place.name, place.lat, place.lng)
 
+    // 2. 지도 처리 기존 로직
+    const placePosition = new window.kakao.maps.LatLng(place.lat, place.lng)
     clearRoute()
     clearMarkers()
     clearInfoWindow()
     setIsNavigating(false)
-
-    // 지도 중심을 해당 장소로 이동
     mapRef.current.setCenter(placePosition)
     mapRef.current.setLevel(3)
 
-    // 현재 위치 마커 유지
     if (currentLocation) {
       const currentPos = new window.kakao.maps.LatLng(currentLocation.lat, currentLocation.lng)
       createCurrentLocationMarker(currentPos)
     }
-
-    // 장소 마커 추가
     const placeMarker = new window.kakao.maps.Marker({
       map: mapRef.current,
       position: placePosition,
     })
     markersRef.current.push(placeMarker)
 
-    // 인포윈도우 표시
-    const infoWindow = new window.kakao.maps.InfoWindow({
-      content: `
+    // 3. 인포윈도우 내용: 카카오 API 정보가 있으면 공식 데이터, 없으면 기존 데이터
+    let contentHtml
+    if (placeDetail) {
+      contentHtml = `
+        <div style="padding:15px;font-size:14px;width:260px;line-height:1.6;">
+          <div style="font-weight:bold;margin-bottom:6px;">${placeDetail.place_name}</div>
+          <div style="margin-bottom:4px;">${placeDetail.category_name || place.category}</div>
+          <div style="font-size:12px;color:#666;">${placeDetail.road_address_name || placeDetail.address_name || place.address}</div>
+          ${placeDetail.phone ? `<div style="font-size:12px;color:#2c7;">☎️ ${placeDetail.phone}</div>` : ""}
+          <div style="margin:8px 0;">
+            <a href="${placeDetail.place_url}" target="_blank" style="color:#3182f6;text-decoration:underline;font-size:13px;">카카오맵 상세보기</a>
+          </div>
+        </div>
+      `
+    } else {
+      contentHtml = `
         <div style="padding:15px;font-size:14px;width:250px;line-height:1.5;">
           <div style="font-weight:bold;margin-bottom:8px;">${place.name}</div>
           <div style="color:#666;margin-bottom:5px;">${place.category}</div>
@@ -1164,9 +1405,12 @@ export default function HomeTab() {
             <div style="color:#06b6d4;font-weight:bold;font-size:12px;">${place.distance}</div>
           </div>
         </div>
-      `,
-    })
+      `
+    }
 
+    const infoWindow = new window.kakao.maps.InfoWindow({
+      content: contentHtml,
+    })
     infoWindow.open(mapRef.current, placeMarker)
     infoWindowRef.current = infoWindow
     setSelectedPlace(place)
@@ -1300,7 +1544,7 @@ export default function HomeTab() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-screen flex flex-col">
       {/* Header */}
       {!navigationInfo?.isActive && (
         <div className="bg-white dark:bg-gray-800 p-4 border-b dark:border-gray-700">
@@ -1334,9 +1578,15 @@ export default function HomeTab() {
         </div>
       )}
 
-      {/* Map Area */}
+
+      {/* 지도/패널 구역 */}
       <div className="flex-1 relative">
-        <div id="map" className="absolute inset-0 z-0" />
+        {/* 지도 */}
+        <div
+          id="map"
+          className="absolute inset-0 z-0 pb-14"
+          style={{ width: "100%", height: "100%" }}
+        />
 
         {/* 현재 위치 버튼 */}
         <Button
@@ -1386,16 +1636,18 @@ export default function HomeTab() {
           </div>
         )}
 
-        {/* 내비게이션 정보 패널 */}
-        {navigationInfo && navigationInfo.isActive && (
-          <NavigationPanel
-            navigationInfo={navigationInfo}
-            voiceEnabled={voiceEnabled}
-            onToggleVoice={() => setVoiceEnabled(!voiceEnabled)}
-            onStop={stopNavigation}
-            formatDistance={formatDistance}
-            formatDuration={formatDuration}
-          />
+        {/* 내비게이션 정보 패널 (지도 위 오버레이) */}
+        {navigationInfo?.isActive && (
+          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-[95%] max-w-lg z-10">
+            <NavigationPanel
+              navigationInfo={navigationInfo}
+              voiceEnabled={voiceEnabled}
+              onToggleVoice={() => setVoiceEnabled(!voiceEnabled)}
+              onStop={stopNavigation}
+              formatDistance={formatDistance}
+              formatDuration={formatDuration}
+            />
+          </div>
         )}
       </div>
 
@@ -1491,7 +1743,7 @@ export default function HomeTab() {
                         <Button size="sm" variant="outline" className="text-xs px-2 py-1" onClick={(e) => { e.stopPropagation(); setSelectedPlace(place) }}>
                           <Navigation className="w-3 h-3 mr-1" />
                           길찾기
-                        </Button>
+                        </Button>       
                         <Button size="sm" variant="ghost" className="text-xs px-2 py-1" onClick={(e) => e.stopPropagation()}>
                           {t("save")}
                         </Button>
