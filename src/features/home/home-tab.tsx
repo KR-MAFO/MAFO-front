@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Search, Navigation, Star, MapPin, Bus, Car, X } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useLanguage } from "@/hooks/use-language"
-import { ApiStatusBanner } from "@/components/api-status-banner"
-import { NavigationPanel } from "@/components/ui/navigation-panel"
+import { ApiStatusBanner } from "@/components/shared/api-status-banner"
+import { NavigationPanel } from "@/components/shared/navigation-panel"
 
 declare global {
   interface Window {
@@ -284,9 +284,9 @@ export default function HomeTab() {
         SEARCH_TARGETS.map(async ({ name, type, value }) => {
           let url = "";
           if (type === "category") {
-            url = `https://dapi.kakao.com/v2/local/search/category.json?category_group_code=${value}&x=${lng}&y=${lat}&radius=50&sort=distance`;
+            url = `https://dapi.kakao.com/v2/local/search/category.json?category_group_code=${value}&x=${lng}&y=${lat}&radius=10&sort=distance`;
           } else {
-            url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(value)}&y=${lat}&x=${lng}&radius=50&sort=distance`;
+            url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(value)}&y=${lat}&x=${lng}&radius=10&sort=distance`;
           }
           const res = await fetch(url, {
             headers: { Authorization: `KakaoAK be818e812c08b93832cfd093d8f206e7` },
@@ -304,21 +304,51 @@ export default function HomeTab() {
 
     const handleClick = async (mouseEvent: any) => {
       const latlng = mouseEvent.latLng;
-      clearMarkers();
-      clearInfoWindow();
+      clearInfoWindow(); // 항상 정보창을 먼저 닫습니다.
 
-      let marker = new window.kakao.maps.Marker({
-        map,
-        position: latlng,
-      });
-      markersRef.current = [marker];
+      // 현재 POI 마커가 있는지 확인합니다.
+      const existingPoiMarker = markersRef.current[0]; // 단일 POI 마커를 가정
+
+      if (existingPoiMarker) {
+        const existingMarkerPosition = existingPoiMarker.getPosition();
+        const distance = calculateDistance(
+          latlng.getLat(), latlng.getLng(),
+          existingMarkerPosition.getLat(), existingMarkerPosition.getLng()
+        );
+
+        // 클릭이 기존 마커와 매우 가까우면 (예: 10미터 이내) 기존 마커를 제거합니다.
+        if (distance < 10) {
+          clearMarkers(); // 기존 마커 제거
+          // 현재 위치 마커가 숨겨져 있었다면 다시 보이게 합니다.
+          if (currentLocationMarkerRef.current && mapRef.current) {
+            currentLocationMarkerRef.current.setMap(mapRef.current);
+          }
+          return; // 새로운 마커를 생성하지 않고 함수를 종료합니다.
+        }
+      }
+
+      // 기존 마커가 없거나, 클릭이 기존 마커 위치가 아니면 새로운 마커를 찾고 배치합니다.
+      clearMarkers(); // 새로운 마커를 배치하기 전에 기존 마커를 제거합니다.
+      // 현재 위치 마커가 있다면 숨깁니다.
+      if (currentLocationMarkerRef.current) {
+        currentLocationMarkerRef.current.setMap(null);
+      }
 
       // [A] 주변에서 가장 가까운 POI 검색
       const poi = await findClosestPOI(latlng.getLat(), latlng.getLng());
 
-      // [B] InfoWindow HTML 생성 (길찾기 버튼 포함)
+      let marker = null;
       let contentHtml;
+
       if (poi) {
+        // POI가 발견되면 해당 POI의 좌표에 마커 생성
+        const poiPosition = new window.kakao.maps.LatLng(Number(poi.y), Number(poi.x));
+        marker = new window.kakao.maps.Marker({
+          map,
+          position: poiPosition,
+        });
+        markersRef.current = [marker];
+
         contentHtml = `
           <div style="padding:12px;font-size:14px;width:240px;">
             <div style="font-weight:bold;margin-bottom:6px;">${poi.place_name}</div>
@@ -334,39 +364,47 @@ export default function HomeTab() {
           </div>
         `;
       } else {
+        // POI가 없으면 마커를 생성하지 않고 정보 없음 메시지 표시
         contentHtml = `<div style="padding:12px;">해당 위치 주변에<br>정보 없음</div>`;
       }
 
-      const infoWindow = new window.kakao.maps.InfoWindow({ content: contentHtml });
-      infoWindow.open(map, marker);
-      infoWindowRef.current = infoWindow;
+      if (marker) { // 마커가 있을 때만 인포윈도우를 엽니다.
+        const infoWindow = new window.kakao.maps.InfoWindow({ content: contentHtml });
+        infoWindow.open(map, marker);
+        infoWindowRef.current = infoWindow;
 
-      // [C] InfoWindow 버튼 클릭 이벤트 핸들러 등록
-      setTimeout(() => {
-        const navBtn = document.getElementById("navigate-btn");
-        if (navBtn && poi) {
-          navBtn.onclick = () => {
-            // poi를 NearbyPlace 타입으로 변환해서 전달
-            const lat = Number(poi.y ?? poi.lat);
-            const lng = Number(poi.x ?? poi.lng);
-            if (!lat || !lng) {
-              alert("장소 좌표 정보가 없습니다.");
-              return;
-            }
-            const place = {
-              id: poi.id || "",
-              name: poi.place_name || poi.name || "",
-              category: poi.categoryKor || poi.category_name || "",
-              distance: poi.distance ? `${poi.distance}m` : "",
-              rating: 0,
-              address: poi.road_address_name || poi.address_name || "",
-              lat,
-              lng,
+        // [C] InfoWindow 버튼 클릭 이벤트 핸들러 등록
+        setTimeout(() => {
+          const navBtn = document.getElementById("navigate-btn");
+          if (navBtn && poi) {
+            navBtn.onclick = () => {
+              // poi를 NearbyPlace 타입으로 변환해서 전달
+              const lat = Number(poi.y ?? poi.lat);
+              const lng = Number(poi.x ?? poi.lng);
+              if (!lat || !lng) {
+                alert("장소 좌표 정보가 없습니다.");
+                return;
+              }
+              const place = {
+                id: poi.id || "",
+                name: poi.place_name || poi.name || "",
+                category: poi.categoryKor || poi.category_name || "",
+                distance: poi.distance ? `${poi.distance}m` : "",
+                rating: 0,
+                address: poi.road_address_name || poi.address_name || "",
+                lat,
+                lng,
+              };
+              startNavigation(place); // 기존 내비게이션 함수에 전달
             };
-            startNavigation(place); // 기존 내비게이션 함수에 전달
-          };
-        }
-      }, 0);
+          }
+        }, 0);
+      } else {
+        // 마커가 없으면 클릭한 위치에 임시 인포윈도우만 표시
+        const infoWindow = new window.kakao.maps.InfoWindow({ content: contentHtml, position: latlng });
+        infoWindow.open(map);
+        infoWindowRef.current = infoWindow;
+      }
     };
 
     // 클릭 이벤트 등록
@@ -463,6 +501,13 @@ export default function HomeTab() {
       checkApiKey()
     }
   }, [mounted])
+
+  useEffect(() => {
+    if (mapRef.current) {
+      mapRef.current.relayout();
+      console.debug('map relayout')
+    }
+  }, [navigationInfo?.isActive, selectedPlace])
 
   // 현재 위치 마커 생성 함수
   const createCurrentLocationMarker = (position: any) => {
@@ -982,6 +1027,10 @@ export default function HomeTab() {
       infoWindowRef.current.close()
       infoWindowRef.current = null
     }
+    // 정보창이 닫힐 때 현재 위치 마커를 다시 보이게 합니다.
+    if (currentLocationMarkerRef.current && mapRef.current) {
+      currentLocationMarkerRef.current.setMap(mapRef.current);
+    }
   }
 
   // 두 지점 간 거리 계산 함수 (Haversine formula)
@@ -1046,16 +1095,16 @@ export default function HomeTab() {
     endLng: number,
   ): Promise<RouteInfo> => {
     try {
-      const response = await fetch("/api/kakao-mobility/walking/route", {
-        method: "POST",
+      const params = new URLSearchParams({
+        origin: `${startLng},${startLat}`,
+        destination: `${endLng},${endLat}`,
+        priority: "RECOMMEND",
+      })
+      const response = await fetch(`/api/kakao-mobility/walking?${params.toString()}`, {
+        method: "GET",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          origin: `${startLng},${startLat}`,
-          destination: `${endLng},${endLat}`,
-          priority: "RECOMMEND",
-        }),
       })
 
       if (!response.ok) {
@@ -1201,36 +1250,69 @@ export default function HomeTab() {
     endLng: number,
   ): Promise<RouteInfo> => {
     try {
-      const response = await fetch("/api/kakao-mobility/transit/route", {
-        method: "POST",
+      const params = new URLSearchParams({
+        origin: `${startLng},${startLat}`,
+        destination: `${endLng},${endLat}`,
+        priority: "RECOMMEND",
+      });
+
+      const response = await fetch(`/api/kakao-mobility/transit?${params.toString()}`, {
+        method: "GET",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          origin: `${startLng},${startLat}`,
-          destination: `${endLng},${endLat}`,
-          priority: "RECOMMEND",
-        }),
-      })
+      });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-      const data = await response.json()
+      const data = await response.json();
+      const section = data.routes[0]?.sections?.[0];
 
-      if (data.error) {
-        throw new Error(data.error)
-      }
+      // pathCoordinates 생성 (필요하면)
+      const pathCoordinates: { lat: number; lng: number }[] = [];
+      section?.roads?.forEach((road: any) => {
+        const vertexes = road.vertexes;
+        for (let i = 0; i < vertexes.length; i += 2) {
+          pathCoordinates.push({
+            lng: vertexes[i],
+            lat: vertexes[i + 1],
+          });
+        }
+      });
+
+      // guides -> NavigationStep[] 변환
+      const steps: NavigationStep[] =
+        section?.guides?.map((guide: any): NavigationStep => {
+          let direction: NavigationStep["direction"] = "straight";
+          // 도보/버스/지하철 등 타입별 안내 구문 조립
+          let instruction = guide.guidance || "";
+          if (guide.type === 3 && guide.vehicle) {
+            // 버스
+            instruction = `${guide.departure_stop_name}에서 ${guide.vehicle.name}번 버스 탑승 → ${guide.arrival_stop_name} 하차`;
+          } else if (guide.type === 4 && guide.vehicle) {
+            // 지하철
+            instruction = `${guide.departure_stop_name}에서 ${guide.vehicle.name} 지하철 탑승 → ${guide.arrival_stop_name} 하차`;
+          }
+          // 기타 등등...
+
+          return {
+            instruction,
+            distance: guide.distance || 0,
+            duration: Math.round(guide.duration / 60),
+            direction,
+            streetName: guide.name,
+          };
+        }) || [];
 
       return {
         type: "transit",
-        distance: data.distance || calculateDistance(startLat, startLng, endLat, endLng),
-        duration: data.duration || Math.round((calculateDistance(startLat, startLng, endLat, endLng) / 1000 / 25) * 60),
-        fare: data.fare,
-        transitInfo: data.transitInfo,
-        steps: data.steps,
-      }
+        distance: data.routes[0]?.summary?.distance ?? 0,
+        duration: Math.round((data.routes[0]?.summary?.duration || 0) / 60),
+        fare: data.routes[0]?.summary?.fare?.regular?.totalFare ?? 0,
+        steps,
+        pathCoordinates,
+        transitInfo: data.routes[0]?.summary?.transitInfo, // 있으면
+      };
     } catch (error) {
       console.error("대중교통 경로 오류:", error)
 
@@ -1367,6 +1449,11 @@ export default function HomeTab() {
     mapRef.current.setCenter(placePosition)
     mapRef.current.setLevel(3)
 
+    // 정보창이 열리기 전에 현재 위치 마커를 숨깁니다.
+    if (currentLocationMarkerRef.current) {
+      currentLocationMarkerRef.current.setMap(null);
+    }
+
     if (currentLocation) {
       const currentPos = new window.kakao.maps.LatLng(currentLocation.lat, currentLocation.lng)
       createCurrentLocationMarker(currentPos)
@@ -1416,115 +1503,31 @@ export default function HomeTab() {
     setSelectedPlace(place)
   }
 
-  // 길찾기 함수
-  const handleNavigation = async (place: NearbyPlace) => {
+  // 길찾기 함수 (카카오맵 URL Scheme 사용)
+  const handleNavigation = (place: NearbyPlace) => {
     if (!currentLocation) {
-      alert("현재 위치를 먼저 확인해주세요.")
-      return
+      alert("현재 위치를 먼저 확인해주세요.");
+      return;
     }
 
-    if (!mapRef.current || typeof window === "undefined") return
+    const transportMode = {
+      walking: 'walk',
+      transit: 'traffic',
+      driving: 'car',
+    }[routeType];
 
-    setIsNavigating(true)
+    // 카카오맵 URL 생성
+    const url = `https://map.kakao.com/link/by/${transportMode}/현재위치,${currentLocation.lat},${currentLocation.lng}/${encodeURIComponent(place.name)},${place.lat},${place.lng}`;
 
-    try {
-      clearRoute()
-      clearInfoWindow()
+    // 새 탭에서 URL 열기
+    window.open(url, '_blank');
 
-      let routeData: RouteInfo
-
-      // 선택된 경로 타입에 따라 다른 API 호출
-      switch (routeType) {
-        case "walking":
-          routeData = await getWalkingRoute(currentLocation.lat, currentLocation.lng, place.lat, place.lng)
-          break
-        case "transit":
-          routeData = await getTransitRoute(currentLocation.lat, currentLocation.lng, place.lat, place.lng)
-          break
-        case "driving":
-          routeData = await getDrivingRoute(currentLocation.lat, currentLocation.lng, place.lat, place.lng)
-          break
-      }
-
-      setRouteInfo(routeData)
-
-      // 경로 폴리라인 생성
-      if (routeData.pathCoordinates && routeData.pathCoordinates.length > 0) {
-        const pathPoints = routeData.pathCoordinates.map((coord) => new window.kakao.maps.LatLng(coord.lat, coord.lng))
-
-        const polyline = new window.kakao.maps.Polyline({
-          path: pathPoints,
-          strokeWeight: 5,
-          strokeColor: routeType === "walking" ? "#3b82f6" : routeType === "transit" ? "#10b981" : "#ef4444",
-          strokeOpacity: 0.8,
-          strokeStyle: "solid",
-        })
-
-        polyline.setMap(mapRef.current)
-        polylineRef.current = polyline
-      } else {
-        // 폴백: 직선 경로
-        const startPos = new window.kakao.maps.LatLng(currentLocation.lat, currentLocation.lng)
-        const endPos = new window.kakao.maps.LatLng(place.lat, place.lng)
-
-        const polyline = new window.kakao.maps.Polyline({
-          path: [startPos, endPos],
-          strokeWeight: 5,
-          strokeColor: routeType === "walking" ? "#3b82f6" : routeType === "transit" ? "#10b981" : "#ef4444",
-          strokeOpacity: 0.8,
-          strokeStyle: "solid",
-        })
-
-        polyline.setMap(mapRef.current)
-        polylineRef.current = polyline
-      }
-
-      // 마커 설정
-      clearMarkers()
-
-      // 현재 위치 마커 (녹색) - handleNavigation 함수 내부
-      const startSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#22c55e" stroke="#ffffff" strokeWidth="2"/><circle cx="12" cy="12" r="4" fill="#ffffff"/></svg>`
-
-      const startMarker = new window.kakao.maps.Marker({
-        map: mapRef.current,
-        position: new window.kakao.maps.LatLng(currentLocation.lat, currentLocation.lng),
-        image: new window.kakao.maps.MarkerImage(
-          "data:image/svg+xml;charset=utf-8," + encodeURIComponent(startSvg),
-          new window.kakao.maps.Size(30, 30),
-          { offset: new window.kakao.maps.Point(15, 15) },
-        ),
-      })
-
-      // 목적지 마커 (빨간색) - handleNavigation 함수 내부
-      const endSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" fill="#ef4444" stroke="#ffffff" strokeWidth="2"/><circle cx="12" cy="10" r="3" fill="#ffffff"/></svg>`
-
-      const endMarker = new window.kakao.maps.Marker({
-        map: mapRef.current,
-        position: new window.kakao.maps.LatLng(place.lat, place.lng),
-        image: new window.kakao.maps.MarkerImage(
-          "data:image/svg+xml;charset=utf-8," + encodeURIComponent(endSvg),
-          new window.kakao.maps.Size(30, 30),
-          { offset: new window.kakao.maps.Point(15, 30) },
-        ),
-      })
-
-      markersRef.current = [startMarker, endMarker]
-
-      // 지도 범위 조정
-      const bounds = new window.kakao.maps.LatLngBounds()
-      bounds.extend(new window.kakao.maps.LatLng(currentLocation.lat, currentLocation.lng))
-      bounds.extend(new window.kakao.maps.LatLng(place.lat, place.lng))
-      mapRef.current.setBounds(bounds)
-
-      setSelectedPlace(place)
-    } catch (error) {
-      console.error("경로 표시 중 오류:", error)
-      const errorMessage = error instanceof Error ? error.message : "경로를 표시하는 중 오류가 발생했습니다."
-      alert(errorMessage)
-    } finally {
-      setIsNavigating(false)
-    }
-  }
+    // 길찾기 UI 초기화
+    setSelectedPlace(null);
+    setIsNavigating(false);
+    setRouteInfo(null);
+    clearRoute();
+  };
 
   // 경로 취소 함수
   const handleCancelNavigation = () => {
@@ -1638,16 +1641,14 @@ export default function HomeTab() {
 
         {/* 내비게이션 정보 패널 (지도 위 오버레이) */}
         {navigationInfo?.isActive && (
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-[95%] max-w-lg z-10">
-            <NavigationPanel
-              navigationInfo={navigationInfo}
-              voiceEnabled={voiceEnabled}
-              onToggleVoice={() => setVoiceEnabled(!voiceEnabled)}
-              onStop={stopNavigation}
-              formatDistance={formatDistance}
-              formatDuration={formatDuration}
-            />
-          </div>
+          <NavigationPanel
+            navigationInfo={navigationInfo}
+            voiceEnabled={voiceEnabled}
+            onToggleVoice={() => setVoiceEnabled(!voiceEnabled)}
+            onStop={stopNavigation}
+            formatDistance={formatDistance}
+            formatDuration={formatDuration}
+          />
         )}
       </div>
 
@@ -1696,8 +1697,9 @@ export default function HomeTab() {
             <Button
               size="sm"
               onClick={() => startNavigation(selectedPlace)}
-              disabled={isNavigating || isNavigationActive}
-              className="bg-green-600 hover:bg-green-700"
+              disabled={isNavigating || isNavigationActive || routeType !== 'driving'}
+              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              title={routeType !== 'driving' ? '자동차 경로일 때만 내비게이션을 사용할 수 있습니다.' : '내비게이션 시작'}
             >
               내비게이션
             </Button>
@@ -1743,7 +1745,7 @@ export default function HomeTab() {
                         <Button size="sm" variant="outline" className="text-xs px-2 py-1" onClick={(e) => { e.stopPropagation(); setSelectedPlace(place) }}>
                           <Navigation className="w-3 h-3 mr-1" />
                           길찾기
-                        </Button>       
+                        </Button>
                         <Button size="sm" variant="ghost" className="text-xs px-2 py-1" onClick={(e) => e.stopPropagation()}>
                           {t("save")}
                         </Button>

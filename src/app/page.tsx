@@ -3,14 +3,14 @@
 import { useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Home, MessageSquare, FolderOpen, User } from "lucide-react"
-import HomeTab from "@/components/home-tab"
-import CommunityTab from "@/components/community-tab"
-import FilesTab from "@/components/files-tab"
-import MyPageTab from "@/components/my-page-tab"
-import LoginPage from "@/components/login-page"
-import SignupPage from "@/components/signup-page"
+import HomeTab from "@/features/home/home-tab"
+import CommunityTab from "@/features/community/community-tab"
+import FilesTab from "@/features/files/files-tab"
+import MyPageTab from "@/features/user/my-page-tab"
+import LoginPage from "@/features/auth/login-page"
+import SignupPage from "@/features/auth/signup-page"
 import { useLanguage } from "@/hooks/use-language"
-import ForgotPasswordPage from "@/components/forgot-password-page"
+import ForgotPasswordPage from "@/features/auth/forgot-password-page"
 
 export default function MapApp() {
   const [activeTab, setActiveTab] = useState("home")

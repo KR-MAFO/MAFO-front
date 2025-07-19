@@ -21,11 +21,11 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useState } from "react"
 import { useLanguage } from "@/hooks/use-language"
 
-import ProfileEditPage from "./profile-edit-page"
-import SettingsPage from "./settings-page"
-import NotificationSettingsPage from "./notification-settings-page"
-import PrivacyPolicyPage from "./privacy-policy-page"
-import CustomerServicePage from "./customer-service-page"
+import ProfileEditPage from "@/features/user/profile-edit-page"
+import SettingsPage from "@/features/settings/settings-page"
+import NotificationSettingsPage from "@/features/settings/notification-settings-page"
+import PrivacyPolicyPage from "@/features/legal/privacy-policy-page"
+import CustomerServicePage from "@/features/legal/customer-service-page"
 
 interface MyPageTabProps {
   onLogout?: () => void
