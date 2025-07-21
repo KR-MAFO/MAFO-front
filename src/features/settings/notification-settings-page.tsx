@@ -109,19 +109,6 @@ export default function NotificationSettingsPage({ onBack }: NotificationSetting
                   onCheckedChange={(checked) => setNotifications({ ...notifications, communityComments: checked })}
                 />
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-green-500" />
-                  <div>
-                    <Label className="text-gray-900 dark:text-white">{t("followNotifications")}</Label>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{t("followNotificationsDesc")}</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={notifications.communityFollows}
-                  onCheckedChange={(checked) => setNotifications({ ...notifications, communityFollows: checked })}
-                />
-              </div>
             </CardContent>
           </Card>
 

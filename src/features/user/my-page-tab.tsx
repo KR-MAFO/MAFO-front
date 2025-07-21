@@ -39,7 +39,6 @@ export default function MyPageTab({ onLogout }: MyPageTabProps) {
     savedPlaces: 24,
     posts: 8,
     likes: 156,
-    followers: 42,
   }
 
   const menuItems = [
@@ -122,7 +121,7 @@ export default function MyPageTab({ onLogout }: MyPageTabProps) {
               </div>
 
               {/* Stats */}
-              <div className="grid grid-cols-4 gap-4 pt-4 border-t">
+              <div className="flex justify-around pt-4 border-t">
                 <div className="text-center">
                   <div className="flex items-center justify-center mb-1">
                     <MapPin className="w-4 h-4 text-blue-600" />
@@ -143,13 +142,6 @@ export default function MyPageTab({ onLogout }: MyPageTabProps) {
                   </div>
                   <p className="text-lg font-semibold">{userStats.likes}</p>
                   <p className="text-xs text-gray-500">{t("likes")}</p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center mb-1">
-                    <Star className="w-4 h-4 text-yellow-600" />
-                  </div>
-                  <p className="text-lg font-semibold">{userStats.followers}</p>
-                  <p className="text-xs text-gray-500">{t("followers")}</p>
                 </div>
               </div>
             </CardContent>
